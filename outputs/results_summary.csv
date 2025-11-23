@@ -1,0 +1,6 @@
+,ROC-AUC,PR-AUC,Brier Score,F1 Score,Recall
+Logistic Regression,0.8020,0.7420,0.1661,0.5385,0.3889
+Logistic Regression (SMOTE),0.7991,0.7703,0.1832,0.6500,0.7222
+Random Forest,0.8319,0.6977,0.1695,0.2857,0.1667
+XGBoost,0.7030,0.5391,0.1948,0.3704,0.2778
+XGBoost (Calibrated),0.7350,0.5298,0.1975,0.1818,0.1111
