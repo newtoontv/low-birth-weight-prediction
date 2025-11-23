@@ -173,247 +173,245 @@ try:
             image_paths = get_image_paths()
             available_images = sum(1 for p in image_paths.values() if os.path.exists(p))
             st.metric("Visualizations", available_images)
-    
-    st.markdown("---")
-    
-    st.subheader("Overview")
-    st.write("""
-    This application provides an interactive interface for predicting low birth weight risk 
-    using machine learning models. Low birth weight (LBW) is defined as an infant weight 
-    below 2.5 kg and is a major indicator of neonatal health.
-    
-    **Features:**
-    - **Interactive Predictions**: Input patient data and get instant risk predictions
-    - **Model Comparison**: Compare performance of 5 different ML models
-    - **Comprehensive Visualizations**: Explore EDA, model performance, and SHAP explanations
-    - **Explainable AI**: Understand which factors contribute to risk predictions
-    
-    **Use the navigation menu to explore different sections.**
-    """)
-    
-    if st.session_state.results is not None:
-        st.subheader("Model Performance Summary")
-        st.dataframe(st.session_state.results.style.highlight_max(axis=0, subset=['ROC-AUC', 'PR-AUC']))
+        
+        st.markdown("---")
+        
+        st.subheader("Overview")
+        st.write("""
+        This application provides an interactive interface for predicting low birth weight risk 
+        using machine learning models. Low birth weight (LBW) is defined as an infant weight 
+        below 2.5 kg and is a major indicator of neonatal health.
+        
+        **Features:**
+        - **Interactive Predictions**: Input patient data and get instant risk predictions
+        - **Model Comparison**: Compare performance of 5 different ML models
+        - **Comprehensive Visualizations**: Explore EDA, model performance, and SHAP explanations
+        - **Explainable AI**: Understand which factors contribute to risk predictions
+        
+        **Use the navigation menu to explore different sections.**
+        """)
+        
+        if st.session_state.results is not None:
+            st.subheader("Model Performance Summary")
+            st.dataframe(st.session_state.results.style.highlight_max(axis=0, subset=['ROC-AUC', 'PR-AUC']))
 
-    # Model Dashboard
     elif page == "Model Dashboard":
         st.header("Model Performance Dashboard")
         
         if st.session_state.results is None:
             st.error("Results not available. Please run main.py first to generate models.")
         else:
+            # Metrics comparison
+            st.subheader("Performance Metrics Comparison")
+            
+            metrics = ['ROC-AUC', 'PR-AUC', 'F1 Score', 'Recall']
+            selected_metric = st.selectbox("Select Metric", metrics)
+            
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=st.session_state.results.index,
+                y=st.session_state.results[selected_metric].astype(float),
+                marker_color='steelblue',
+                text=st.session_state.results[selected_metric].astype(float).round(4),
+                textposition='outside'
+            ))
+            fig.update_layout(
+                title=f"{selected_metric} by Model",
+                xaxis_title="Model",
+                yaxis_title=selected_metric,
+                height=500,
+                showlegend=False
+            )
+            st.plotly_chart(fig, width='stretch')
+            
+            # Detailed metrics table
+            st.subheader("Detailed Metrics")
+            st.dataframe(st.session_state.results)
+            
+            # Best model highlight
             try:
-                # Metrics comparison
-                st.subheader("Performance Metrics Comparison")
-                
-                metrics = ['ROC-AUC', 'PR-AUC', 'F1 Score', 'Recall']
-                selected_metric = st.selectbox("Select Metric", metrics)
-                
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=st.session_state.results.index,
-                    y=st.session_state.results[selected_metric].astype(float),
-                    marker_color='steelblue',
-                    text=st.session_state.results[selected_metric].astype(float).round(4),
-                    textposition='outside'
-                ))
-                fig.update_layout(
-                    title=f"{selected_metric} by Model",
-                    xaxis_title="Model",
-                    yaxis_title=selected_metric,
-                    height=500,
-                    showlegend=False
-                )
-                st.plotly_chart(fig, width='stretch')
-                
-                # Detailed metrics table
-                st.subheader("Detailed Metrics")
-                st.dataframe(st.session_state.results)
-                
-                # Best model highlight
-                try:
-                    best_model = st.session_state.results['ROC-AUC'].astype(float).idxmax()
-                    best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
-                    st.success(f"**Best Performing Model**: {best_model} with ROC-AUC of {best_score}")
-                except:
-                    st.info("Unable to determine best model.")
+                best_model = st.session_state.results['ROC-AUC'].astype(float).idxmax()
+                best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
+                st.success(f"**Best Performing Model**: {best_model} with ROC-AUC of {best_score}")
+            except:
+                st.info("Unable to determine best model.")
 
     # Make Prediction
     elif page == "Make Prediction":
-    st.header("Make a Prediction")
-    
-    if len(st.session_state.models) == 0:
-        st.error("No models available. Please run main.py first to train models.")
-    else:
-        st.write("Enter patient information to predict low birth weight risk:")
+        st.header("Make a Prediction")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            age = st.number_input("Maternal Age (years)", min_value=14, max_value=50, value=25, step=1)
-            lwt = st.number_input("Mother's Weight at Last Menstrual Period (lbs)", min_value=80, max_value=250, value=130, step=1)
-            race = st.selectbox("Race", options=[1, 2, 3], format_func=lambda x: {1: "White", 2: "Black", 3: "Other"}[x])
-            smoke = st.selectbox("Smoking Status", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
-        
-        with col2:
-            ptl = st.number_input("Number of Previous Premature Labors", min_value=0, max_value=3, value=0, step=1)
-            ht = st.selectbox("History of Hypertension", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
-            ui = st.selectbox("Uterine Irritability", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
-            ftv = st.number_input("Number of Physician Visits (First Trimester)", min_value=0, max_value=6, value=1, step=1)
-        
-        # Model selection
-        selected_model = st.selectbox("Select Model for Prediction", list(st.session_state.models.keys()))
-        
-        if st.button("Predict Risk", type="primary"):
-            # Prepare input data
-            input_data = pd.DataFrame({
-                'age': [age],
-                'lwt': [lwt],
-                'race': [race],
-                'smoke': [smoke],
-                'ptl': [ptl],
-                'ht': [ht],
-                'ui': [ui],
-                'ftv': [ftv]
-            })
+        if len(st.session_state.models) == 0:
+            st.error("No models available. Please run main.py first to train models.")
+        else:
+            st.write("Enter patient information to predict low birth weight risk:")
             
-            # Make prediction
-            model = st.session_state.models[selected_model]
+            col1, col2 = st.columns(2)
             
-            try:
-                # Get prediction probability
-                prob = model.predict_proba(input_data)[0, 1]
-                prediction = model.predict(input_data)[0]
+            with col1:
+                age = st.number_input("Maternal Age (years)", min_value=14, max_value=50, value=25, step=1)
+                lwt = st.number_input("Mother's Weight at Last Menstrual Period (lbs)", min_value=80, max_value=250, value=130, step=1)
+                race = st.selectbox("Race", options=[1, 2, 3], format_func=lambda x: {1: "White", 2: "Black", 3: "Other"}[x])
+                smoke = st.selectbox("Smoking Status", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
+            
+            with col2:
+                ptl = st.number_input("Number of Previous Premature Labors", min_value=0, max_value=3, value=0, step=1)
+                ht = st.selectbox("History of Hypertension", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
+                ui = st.selectbox("Uterine Irritability", options=[0, 1], format_func=lambda x: "No" if x == 0 else "Yes")
+                ftv = st.number_input("Number of Physician Visits (First Trimester)", min_value=0, max_value=6, value=1, step=1)
+            
+            # Model selection
+            selected_model = st.selectbox("Select Model for Prediction", list(st.session_state.models.keys()))
+            
+            if st.button("Predict Risk", type="primary"):
+                # Prepare input data
+                input_data = pd.DataFrame({
+                    'age': [age],
+                    'lwt': [lwt],
+                    'race': [race],
+                    'smoke': [smoke],
+                    'ptl': [ptl],
+                    'ht': [ht],
+                    'ui': [ui],
+                    'ftv': [ftv]
+                })
                 
-                # Display results
-                st.markdown("---")
-                st.subheader("Prediction Results")
+                # Make prediction
+                model = st.session_state.models[selected_model]
                 
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    risk_percent = prob * 100
-                    if risk_percent >= 50:
-                        st.markdown(f'<div class="prediction-high">Risk: {risk_percent:.1f}%</div>', unsafe_allow_html=True)
+                try:
+                    # Get prediction probability
+                    prob = model.predict_proba(input_data)[0, 1]
+                    prediction = model.predict(input_data)[0]
+                    
+                    # Display results
+                    st.markdown("---")
+                    st.subheader("Prediction Results")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        risk_percent = prob * 100
+                        if risk_percent >= 50:
+                            st.markdown(f'<div class="prediction-high">Risk: {risk_percent:.1f}%</div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<div class="prediction-low">Risk: {risk_percent:.1f}%</div>', unsafe_allow_html=True)
+                    
+                    with col2:
+                        if prediction == 1:
+                            st.markdown('<div class="prediction-high">Prediction: Low Birth Weight Risk</div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div class="prediction-low">Prediction: Normal Birth Weight</div>', unsafe_allow_html=True)
+                    
+                    with col3:
+                        st.metric("Model Used", selected_model)
+                    
+                    # Risk interpretation
+                    st.markdown("---")
+                    if risk_percent >= 70:
+                        st.warning("**High Risk**: This patient has a high risk of low birth weight. Consider additional monitoring and interventions.")
+                    elif risk_percent >= 40:
+                        st.info("**Moderate Risk**: This patient has a moderate risk. Regular monitoring is recommended.")
                     else:
-                        st.markdown(f'<div class="prediction-low">Risk: {risk_percent:.1f}%</div>', unsafe_allow_html=True)
-                
-                with col2:
-                    if prediction == 1:
-                        st.markdown('<div class="prediction-high">Prediction: Low Birth Weight Risk</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="prediction-low">Prediction: Normal Birth Weight</div>', unsafe_allow_html=True)
-                
-                with col3:
-                    st.metric("Model Used", selected_model)
-                
-                # Risk interpretation
-                st.markdown("---")
-                if risk_percent >= 70:
-                    st.warning("**High Risk**: This patient has a high risk of low birth weight. Consider additional monitoring and interventions.")
-                elif risk_percent >= 40:
-                    st.info("**Moderate Risk**: This patient has a moderate risk. Regular monitoring is recommended.")
-                else:
-                    st.success("**Low Risk**: This patient has a low risk of low birth weight.")
-                
-                # Visualize probability
-                fig = go.Figure(go.Indicator(
-                    mode = "gauge+number+delta",
-                    value = risk_percent,
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': "Risk Probability (%)"},
-                    delta = {'reference': 50},
-                    gauge = {
-                        'axis': {'range': [None, 100]},
-                        'bar': {'color': "darkblue"},
-                        'steps': [
-                            {'range': [0, 40], 'color': "lightgreen"},
-                            {'range': [40, 70], 'color': "yellow"},
-                            {'range': [70, 100], 'color': "red"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "red", 'width': 4},
-                            'thickness': 0.75,
-                            'value': 50
+                        st.success("**Low Risk**: This patient has a low risk of low birth weight.")
+                    
+                    # Visualize probability
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number+delta",
+                        value = risk_percent,
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Risk Probability (%)"},
+                        delta = {'reference': 50},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "darkblue"},
+                            'steps': [
+                                {'range': [0, 40], 'color': "lightgreen"},
+                                {'range': [40, 70], 'color': "yellow"},
+                                {'range': [70, 100], 'color': "red"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "red", 'width': 4},
+                                'thickness': 0.75,
+                                'value': 50
+                            }
                         }
-                    }
-                ))
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, width='stretch')
-                
-                # Feature importance (if available)
-                st.markdown("---")
-                st.subheader("Key Risk Factors")
-                st.write("""
-                Based on clinical research, the following factors are known to influence low birth weight risk:
-                - **Smoking**: Significantly increases risk
-                - **Hypertension**: Major risk factor
-                - **Maternal Age**: Very young or older mothers have higher risk
-                - **Maternal Weight**: Low pre-pregnancy weight increases risk
-                - **Uterine Irritability**: May indicate complications
-                - **Previous Premature Labors**: History increases risk
-                """)
-                
-            except Exception as e:
-                st.error(f"Error making prediction: {e}")
-                st.write("Please check that all input fields are filled correctly.")
+                    ))
+                    fig.update_layout(height=300)
+                    st.plotly_chart(fig, width='stretch')
+                    
+                    # Feature importance (if available)
+                    st.markdown("---")
+                    st.subheader("Key Risk Factors")
+                    st.write("""
+                    Based on clinical research, the following factors are known to influence low birth weight risk:
+                    - **Smoking**: Significantly increases risk
+                    - **Hypertension**: Major risk factor
+                    - **Maternal Age**: Very young or older mothers have higher risk
+                    - **Maternal Weight**: Low pre-pregnancy weight increases risk
+                    - **Uterine Irritability**: May indicate complications
+                    - **Previous Premature Labors**: History increases risk
+                    """)
+                    
+                except Exception as e:
+                    st.error(f"Error making prediction: {e}")
+                    st.write("Please check that all input fields are filled correctly.")
 
     # Visualizations
     elif page == "Visualizations":
-    st.header("Model Visualizations")
-    
-    image_paths = get_image_paths()
-    available_viz = {name: path for name, path in image_paths.items() if os.path.exists(path)}
-    
-    if len(available_viz) == 0:
-        st.error("No visualizations available. Please run main.py first to generate plots.")
-    else:
-        # Visualization selector
-        viz_options = list(available_viz.keys())
-        selected_viz = st.selectbox("Select Visualization", viz_options)
+        st.header("Model Visualizations")
         
-        if selected_viz:
-            st.subheader(selected_viz)
-            img = load_image(available_viz[selected_viz])
-            if img:
-                st.image(img, width='stretch')
-            else:
-                st.error(f"Could not load {selected_viz}")
+        image_paths = get_image_paths()
+        available_viz = {name: path for name, path in image_paths.items() if os.path.exists(path)}
+        
+        if len(available_viz) == 0:
+            st.error("No visualizations available. Please run main.py first to generate plots.")
+        else:
+            # Visualization selector
+            viz_options = list(available_viz.keys())
+            selected_viz = st.selectbox("Select Visualization", viz_options)
             
-            # Add descriptions
-            descriptions = {
-                'EDA Overview': "Exploratory data analysis showing target distribution, birth weight distributions, and feature correlations.",
-                'Feature Distributions': "Distribution of numeric features by birth weight class (normal vs low birth weight).",
-                'ROC Curves': "Receiver Operating Characteristic curves comparing all models. Higher AUC indicates better performance.",
-                'PR Curves': "Precision-Recall curves showing the trade-off between precision and recall for each model.",
-                'Calibration Plots': "Reliability curves showing how well-calibrated each model's probability predictions are.",
-                'Confusion Matrices': "Confusion matrices showing true positives, false positives, true negatives, and false negatives.",
-                'SHAP Summary': "SHAP summary plot showing the impact of each feature on model predictions.",
-                'SHAP Importance': "Feature importance based on SHAP values, showing which factors most influence predictions.",
-                'Risk Heatmap': "Risk heatmap showing how maternal age and weight combinations affect risk.",
-                'Model Comparison': "Bar chart comparing all models across different performance metrics."
-            }
-            
-            if selected_viz in descriptions:
-                st.info(descriptions[selected_viz])
-        
-        # Show all visualizations in expanders
-        st.markdown("---")
-        st.subheader("All Visualizations")
-        
-        for viz_name, path in available_viz.items():
-            with st.expander(viz_name):
-                img = load_image(path)
+            if selected_viz:
+                st.subheader(selected_viz)
+                img = load_image(available_viz[selected_viz])
                 if img:
                     st.image(img, width='stretch')
                 else:
-                    st.warning(f"Could not load {viz_name}")
+                    st.error(f"Could not load {selected_viz}")
+                
+                # Add descriptions
+                descriptions = {
+                    'EDA Overview': "Exploratory data analysis showing target distribution, birth weight distributions, and feature correlations.",
+                    'Feature Distributions': "Distribution of numeric features by birth weight class (normal vs low birth weight).",
+                    'ROC Curves': "Receiver Operating Characteristic curves comparing all models. Higher AUC indicates better performance.",
+                    'PR Curves': "Precision-Recall curves showing the trade-off between precision and recall for each model.",
+                    'Calibration Plots': "Reliability curves showing how well-calibrated each model's probability predictions are.",
+                    'Confusion Matrices': "Confusion matrices showing true positives, false positives, true negatives, and false negatives.",
+                    'SHAP Summary': "SHAP summary plot showing the impact of each feature on model predictions.",
+                    'SHAP Importance': "Feature importance based on SHAP values, showing which factors most influence predictions.",
+                    'Risk Heatmap': "Risk heatmap showing how maternal age and weight combinations affect risk.",
+                    'Model Comparison': "Bar chart comparing all models across different performance metrics."
+                }
+                
+                if selected_viz in descriptions:
+                    st.info(descriptions[selected_viz])
+            
+            # Show all visualizations in expanders
+            st.markdown("---")
+            st.subheader("All Visualizations")
+            
+            for viz_name, path in available_viz.items():
+                with st.expander(viz_name):
+                    img = load_image(path)
+                    if img:
+                        st.image(img, width='stretch')
+                    else:
+                        st.warning(f"Could not load {viz_name}")
 
     # About Page
     elif page == "About":
-    st.header("About This Application")
-    
-    st.write("""
+        st.header("About This Application")
+        
+        st.write("""
     ## Low Birth Weight Risk Prediction System
     
     This application uses machine learning models to predict the risk of low birth weight 
