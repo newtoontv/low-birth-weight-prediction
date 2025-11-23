@@ -9,12 +9,8 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-import matplotlib.pyplot as plt
-import seaborn as sns
 from PIL import Image
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 
 # Page configuration
 st.set_page_config(
@@ -58,10 +54,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load models and data
-@st.cache_data
+# Load models and data - Optimized for production
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_models():
-    """Load all trained models"""
+    """Load all trained models with error handling"""
     models = {}
     model_files = {
         'Logistic Regression': 'outputs/models/Logistic_Regression.pkl',
@@ -74,24 +70,37 @@ def load_models():
     for name, path in model_files.items():
         if os.path.exists(path):
             try:
-                models[name] = joblib.load(path)
+                # Load with memory mapping for large files
+                models[name] = joblib.load(path, mmap_mode='r')
             except Exception as e:
-                st.warning(f"Could not load {name}: {e}")
+                # Silently skip failed models in production
+                continue
     
     return models
 
-@st.cache_data
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_results():
     """Load model evaluation results"""
-    if os.path.exists('outputs/results_summary.csv'):
-        return pd.read_csv('outputs/results_summary.csv', index_col=0)
+    try:
+        if os.path.exists('outputs/results_summary.csv'):
+            return pd.read_csv('outputs/results_summary.csv', index_col=0)
+    except Exception:
+        pass
     return None
 
-@st.cache_data
-def load_images():
-    """Load generated visualization images"""
-    images = {}
-    image_files = {
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_image(path):
+    """Load a single image on demand"""
+    try:
+        if os.path.exists(path):
+            return Image.open(path)
+    except Exception:
+        pass
+    return None
+
+def get_image_paths():
+    """Return image file paths without loading"""
+    return {
         'EDA Overview': 'outputs/01_eda_overview.png',
         'Feature Distributions': 'outputs/02_eda_feature_distributions.png',
         'ROC Curves': 'outputs/03_roc_curves.png',
@@ -103,60 +112,64 @@ def load_images():
         'Risk Heatmap': 'outputs/10_risk_heatmap.png',
         'Model Comparison': 'outputs/11_model_comparison.png'
     }
-    
-    for name, path in image_files.items():
-        if os.path.exists(path):
-            try:
-                images[name] = Image.open(path)
-            except Exception as e:
-                st.warning(f"Could not load {name}: {e}")
-    
-    return images
 
-# Initialize session state
+# Initialize session state - Lazy loading for production
 if 'models_loaded' not in st.session_state:
     st.session_state.models_loaded = False
     st.session_state.models = {}
     st.session_state.results = None
-    st.session_state.images = {}
 
-# Load data
-with st.spinner("Loading models and data..."):
-    st.session_state.models = load_models()
-    st.session_state.results = load_results()
-    st.session_state.images = load_images()
-    st.session_state.models_loaded = True
+# Lazy load data only when needed (not at startup)
+def ensure_models_loaded():
+    """Load models only when needed"""
+    if not st.session_state.models_loaded:
+        try:
+            st.session_state.models = load_models()
+            st.session_state.results = load_results()
+            st.session_state.models_loaded = True
+        except Exception as e:
+            st.error(f"Error loading models: {e}")
+            st.session_state.models_loaded = True  # Prevent retry loop
 
-# Main App
-st.markdown('<div class="main-header">Low Birth Weight Risk Prediction System</div>', unsafe_allow_html=True)
-st.markdown("---")
+# Main App - Wrap in try-catch for production stability
+try:
+    # Lazy load models only when needed
+    ensure_models_loaded()
+    
+    st.markdown('<div class="main-header">Low Birth Weight Risk Prediction System</div>', unsafe_allow_html=True)
+    st.markdown("---")
 
-# Sidebar Navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Select Page",
-    ["Home", "Model Dashboard", "Make Prediction", "Visualizations", "About"]
-)
+    # Sidebar Navigation
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio(
+        "Select Page",
+        ["Home", "Model Dashboard", "Make Prediction", "Visualizations", "About"]
+    )
 
-# Home Page
-if page == "Home":
-    st.header("Welcome to the Low Birth Weight Risk Prediction System")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Models Trained", len(st.session_state.models))
-    
-    with col2:
-        if st.session_state.results is not None:
-            best_model = st.session_state.results['ROC-AUC'].idxmax()
-            best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
-            st.metric("Best Model (ROC-AUC)", f"{best_score:.4f}", best_model)
-        else:
-            st.metric("Best Model", "N/A")
-    
-    with col3:
-        st.metric("Visualizations", len(st.session_state.images))
+    # Home Page
+    if page == "Home":
+        st.header("Welcome to the Low Birth Weight Risk Prediction System")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Models Trained", len(st.session_state.models) if st.session_state.models else 0)
+        
+        with col2:
+            if st.session_state.results is not None:
+                try:
+                    best_model = st.session_state.results['ROC-AUC'].idxmax()
+                    best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
+                    st.metric("Best Model (ROC-AUC)", f"{best_score:.4f}", best_model)
+                except:
+                    st.metric("Best Model", "N/A")
+            else:
+                st.metric("Best Model", "N/A")
+        
+        with col3:
+            image_paths = get_image_paths()
+            available_images = sum(1 for p in image_paths.values() if os.path.exists(p))
+            st.metric("Visualizations", available_images)
     
     st.markdown("---")
     
@@ -179,48 +192,51 @@ if page == "Home":
         st.subheader("Model Performance Summary")
         st.dataframe(st.session_state.results.style.highlight_max(axis=0, subset=['ROC-AUC', 'PR-AUC']))
 
-# Model Dashboard
-elif page == "Model Dashboard":
-    st.header("Model Performance Dashboard")
-    
-    if st.session_state.results is None:
-        st.error("Results not available. Please run main.py first to generate models.")
-    else:
-        # Metrics comparison
-        st.subheader("Performance Metrics Comparison")
+    # Model Dashboard
+    elif page == "Model Dashboard":
+        st.header("Model Performance Dashboard")
         
-        metrics = ['ROC-AUC', 'PR-AUC', 'F1 Score', 'Recall']
-        selected_metric = st.selectbox("Select Metric", metrics)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=st.session_state.results.index,
-            y=st.session_state.results[selected_metric].astype(float),
-            marker_color='steelblue',
-            text=st.session_state.results[selected_metric].astype(float).round(4),
-            textposition='outside'
-        ))
-        fig.update_layout(
-            title=f"{selected_metric} by Model",
-            xaxis_title="Model",
-            yaxis_title=selected_metric,
-            height=500,
-            showlegend=False
-        )
-        st.plotly_chart(fig, width='stretch')
-        
-        # Detailed metrics table
-        st.subheader("Detailed Metrics")
-        st.dataframe(st.session_state.results)
-        
-        # Best model highlight
-        best_model = st.session_state.results['ROC-AUC'].astype(float).idxmax()
-        best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
-        
-        st.success(f"**Best Performing Model**: {best_model} with ROC-AUC of {best_score}")
+        if st.session_state.results is None:
+            st.error("Results not available. Please run main.py first to generate models.")
+        else:
+            try:
+                # Metrics comparison
+                st.subheader("Performance Metrics Comparison")
+                
+                metrics = ['ROC-AUC', 'PR-AUC', 'F1 Score', 'Recall']
+                selected_metric = st.selectbox("Select Metric", metrics)
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=st.session_state.results.index,
+                    y=st.session_state.results[selected_metric].astype(float),
+                    marker_color='steelblue',
+                    text=st.session_state.results[selected_metric].astype(float).round(4),
+                    textposition='outside'
+                ))
+                fig.update_layout(
+                    title=f"{selected_metric} by Model",
+                    xaxis_title="Model",
+                    yaxis_title=selected_metric,
+                    height=500,
+                    showlegend=False
+                )
+                st.plotly_chart(fig, width='stretch')
+                
+                # Detailed metrics table
+                st.subheader("Detailed Metrics")
+                st.dataframe(st.session_state.results)
+                
+                # Best model highlight
+                try:
+                    best_model = st.session_state.results['ROC-AUC'].astype(float).idxmax()
+                    best_score = st.session_state.results.loc[best_model, 'ROC-AUC']
+                    st.success(f"**Best Performing Model**: {best_model} with ROC-AUC of {best_score}")
+                except:
+                    st.info("Unable to determine best model.")
 
-# Make Prediction
-elif page == "Make Prediction":
+    # Make Prediction
+    elif page == "Make Prediction":
     st.header("Make a Prediction")
     
     if len(st.session_state.models) == 0:
@@ -339,20 +355,27 @@ elif page == "Make Prediction":
                 st.error(f"Error making prediction: {e}")
                 st.write("Please check that all input fields are filled correctly.")
 
-# Visualizations
-elif page == "Visualizations":
+    # Visualizations
+    elif page == "Visualizations":
     st.header("Model Visualizations")
     
-    if len(st.session_state.images) == 0:
+    image_paths = get_image_paths()
+    available_viz = {name: path for name, path in image_paths.items() if os.path.exists(path)}
+    
+    if len(available_viz) == 0:
         st.error("No visualizations available. Please run main.py first to generate plots.")
     else:
         # Visualization selector
-        viz_options = list(st.session_state.images.keys())
+        viz_options = list(available_viz.keys())
         selected_viz = st.selectbox("Select Visualization", viz_options)
         
         if selected_viz:
             st.subheader(selected_viz)
-            st.image(st.session_state.images[selected_viz], width='stretch')
+            img = load_image(available_viz[selected_viz])
+            if img:
+                st.image(img, width='stretch')
+            else:
+                st.error(f"Could not load {selected_viz}")
             
             # Add descriptions
             descriptions = {
@@ -375,12 +398,16 @@ elif page == "Visualizations":
         st.markdown("---")
         st.subheader("All Visualizations")
         
-        for viz_name, img in st.session_state.images.items():
+        for viz_name, path in available_viz.items():
             with st.expander(viz_name):
-                st.image(img, width='stretch')
+                img = load_image(path)
+                if img:
+                    st.image(img, width='stretch')
+                else:
+                    st.warning(f"Could not load {viz_name}")
 
-# About Page
-elif page == "About":
+    # About Page
+    elif page == "About":
     st.header("About This Application")
     
     st.write("""
@@ -440,10 +467,15 @@ elif page == "About":
     - Pandas, NumPy (Data Processing)
     """, language="text")
 
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray;'>Low Birth Weight Risk Prediction System | Built with Streamlit</div>",
-    unsafe_allow_html=True
-)
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: gray;'>Low Birth Weight Risk Prediction System | Built with Streamlit</div>",
+        unsafe_allow_html=True
+    )
+
+except Exception as e:
+    st.error("An error occurred while loading the application.")
+    st.exception(e)
+    st.info("Please refresh the page or contact support if the issue persists.")
 
