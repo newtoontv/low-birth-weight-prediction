@@ -70,9 +70,12 @@ def load_models():
     for name, path in model_files.items():
         if os.path.exists(path):
             try:
-                # Load with memory mapping for large files
-                models[name] = joblib.load(path, mmap_mode='r')
-            except Exception as e:
+                # Try memory mapping first, fallback to normal load
+                try:
+                    models[name] = joblib.load(path, mmap_mode='r')
+                except:
+                    models[name] = joblib.load(path)
+            except Exception:
                 # Silently skip failed models in production
                 continue
     
