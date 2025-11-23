@@ -100,11 +100,11 @@ The app will open in your browser at `http://localhost:8501`
 
 The Streamlit web application provides:
 
-- 🏠 **Home Dashboard**: Overview of models and performance
-- 📊 **Model Dashboard**: Interactive comparison of all models
-- 🔮 **Make Prediction**: Input patient data and get instant risk predictions
-- 📈 **Visualizations**: Browse all generated plots and charts
-- ℹ️ **About**: Project information and documentation
+-  **Home Dashboard**: Overview of models and performance
+-  **Model Dashboard**: Interactive comparison of all models
+-  **Make Prediction**: Input patient data and get instant risk predictions
+-  **Visualizations**: Browse all generated plots and charts
+-  **About**: Project information and documentation
 
 ### Prediction Interface
 
